@@ -330,7 +330,11 @@ void FFBHIDMain::usbResume(){
 
 // External interrupt pins
 void FFBHIDMain::exti(uint16_t GPIO_Pin){
-	if(GPIO_Pin == BUTTON_A_Pin){
+	// The EXTI callback only passes the pin number. On targets where another port's pin with the same number
+	// uses the EXTI line (e.g. DISCO: encoder Z on PA2 vs BUTTON_A on PB2) only react if the line is mapped to the button port.
+	const uint32_t btnExtiLine = POSITION_VAL(BUTTON_A_Pin);
+	const bool btnOwnsExtiLine = ((SYSCFG->EXTICR[btnExtiLine >> 2U] >> (4U * (btnExtiLine & 0x03U))) & 0x0FU) == GPIO_GET_INDEX(BUTTON_A_GPIO_Port);
+	if(GPIO_Pin == BUTTON_A_Pin && btnOwnsExtiLine){
 		// Button down?
 		if(HAL_GPIO_ReadPin(BUTTON_A_GPIO_Port, BUTTON_A_Pin)){
 			this->control.resetEncoder = true;
