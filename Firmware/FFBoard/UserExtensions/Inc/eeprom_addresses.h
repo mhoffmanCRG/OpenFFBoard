@@ -13,11 +13,11 @@
 
 #include "main.h"
 // Change this to the amount of currently registered variables
-#define NB_OF_VAR 164
+#define NB_OF_VAR 182
 extern const uint16_t VirtAddVarTab[NB_OF_VAR];
 
 // Amount of variables in exportable list
-#define NB_EXPORTABLE_ADR 149
+#define NB_EXPORTABLE_ADR 167
 extern const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR];
 
 
@@ -90,6 +90,8 @@ uint16_t EE_ReadVariable(uint16_t VirtAddress, uint16_t* Data) will return 1 if 
 #define ADR_FFB_EFFECTS3 0x286 // 0-7 friction ramp up zone, 8-9 filterProfile
 // Button Sources:
 #define ADR_ADS111X_CONF1 0x290
+#define ADR_HX711_CONF1 0x291 // 0-2 chips, 3-4 gain, 5-8 shift, 9 autotare off, 10-11 processing, 12-15 invert
+#define ADR_HX711_CONF2 0x292 // 0-3 pedal mode mask (0% at no load)
 // How many axis configured 1-3
 #define ADR_AXIS_COUNT 0x300
 // AXIS1
@@ -228,4 +230,21 @@ uint16_t EE_ReadVariable(uint16_t VirtAddress, uint16_t* Data) will return 1 if 
 #define ADR_ADS111X_MAX_2 0x515
 #define ADR_ADS111X_MIN_3 0x516
 #define ADR_ADS111X_MAX_3 0x517
+// HX711
+#define ADR_HX711_MIN_0 0x518
+#define ADR_HX711_MAX_0 0x519
+#define ADR_HX711_MIN_1 0x51A
+#define ADR_HX711_MAX_1 0x51B
+#define ADR_HX711_MIN_2 0x51C
+#define ADR_HX711_MAX_2 0x51D
+#define ADR_HX711_MIN_3 0x51E
+#define ADR_HX711_MAX_3 0x51F
+#define ADR_HX711_OFS_L_0 0x520 // Tare offset low 16b
+#define ADR_HX711_OFS_H_0 0x521 // Tare offset high 16b
+#define ADR_HX711_OFS_L_1 0x522 // Tare offset low 16b
+#define ADR_HX711_OFS_H_1 0x523 // Tare offset high 16b
+#define ADR_HX711_OFS_L_2 0x524 // Tare offset low 16b
+#define ADR_HX711_OFS_H_2 0x525 // Tare offset high 16b
+#define ADR_HX711_OFS_L_3 0x526 // Tare offset low 16b
+#define ADR_HX711_OFS_H_3 0x527 // Tare offset high 16b
 #endif /* EEPROM_ADDRESSES_H_ */

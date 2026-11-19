@@ -59,6 +59,7 @@ enum class ClassType : uint16_t {
 #define CLSID_ANALOG_LOCAL 	0x41
 #define CLSID_ANALOG_CAN	0x42
 #define CLSID_ANALOG_ADS111X	0x43
+#define CLSID_ANALOG_HX711	0x44
 
 // Encoders
 #define CLSID_ENCODER_NONE	0x60

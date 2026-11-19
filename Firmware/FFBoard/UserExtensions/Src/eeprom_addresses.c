@@ -72,6 +72,8 @@ const uint16_t VirtAddVarTab[NB_OF_VAR] =
 	ADR_FFB_EFFECTS3, // 0-7 friction ramp up zone, 8-9 filterProfile
 // Button Sources:
 	ADR_ADS111X_CONF1,
+	ADR_HX711_CONF1, // 0-2 chips, 3-4 gain, 5-8 shift, 9 autotare off, 10-11 processing, 12-15 invert
+	ADR_HX711_CONF2, // 0-3 pedal mode mask (0% at no load)
 // How many axis configured 1-3
 	ADR_AXIS_COUNT,
 // AXIS1
@@ -210,6 +212,23 @@ const uint16_t VirtAddVarTab[NB_OF_VAR] =
 	ADR_ADS111X_MAX_2,
 	ADR_ADS111X_MIN_3,
 	ADR_ADS111X_MAX_3,
+// HX711
+	ADR_HX711_MIN_0,
+	ADR_HX711_MAX_0,
+	ADR_HX711_MIN_1,
+	ADR_HX711_MAX_1,
+	ADR_HX711_MIN_2,
+	ADR_HX711_MAX_2,
+	ADR_HX711_MIN_3,
+	ADR_HX711_MAX_3,
+	ADR_HX711_OFS_L_0, // Tare offset low 16b
+	ADR_HX711_OFS_H_0, // Tare offset high 16b
+	ADR_HX711_OFS_L_1, // Tare offset low 16b
+	ADR_HX711_OFS_H_1, // Tare offset high 16b
+	ADR_HX711_OFS_L_2, // Tare offset low 16b
+	ADR_HX711_OFS_H_2, // Tare offset high 16b
+	ADR_HX711_OFS_L_3, // Tare offset low 16b
+	ADR_HX711_OFS_H_3, // Tare offset high 16b
 };
 
 /**		
@@ -272,6 +291,8 @@ const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR] =
 	ADR_FFB_EFFECTS3, // 0-7 friction ramp up zone, 8-9 filterProfile
 // Button Sources:
 	ADR_ADS111X_CONF1,
+	ADR_HX711_CONF1, // 0-2 chips, 3-4 gain, 5-8 shift, 9 autotare off, 10-11 processing, 12-15 invert
+	ADR_HX711_CONF2, // 0-3 pedal mode mask (0% at no load)
 // How many axis configured 1-3
 	ADR_AXIS_COUNT,
 // AXIS1
@@ -410,4 +431,21 @@ const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR] =
 	ADR_ADS111X_MAX_2,
 	ADR_ADS111X_MIN_3,
 	ADR_ADS111X_MAX_3,
+// HX711
+	ADR_HX711_MIN_0,
+	ADR_HX711_MAX_0,
+	ADR_HX711_MIN_1,
+	ADR_HX711_MAX_1,
+	ADR_HX711_MIN_2,
+	ADR_HX711_MAX_2,
+	ADR_HX711_MIN_3,
+	ADR_HX711_MAX_3,
+	ADR_HX711_OFS_L_0, // Tare offset low 16b
+	ADR_HX711_OFS_H_0, // Tare offset high 16b
+	ADR_HX711_OFS_L_1, // Tare offset low 16b
+	ADR_HX711_OFS_H_1, // Tare offset high 16b
+	ADR_HX711_OFS_L_2, // Tare offset low 16b
+	ADR_HX711_OFS_H_2, // Tare offset high 16b
+	ADR_HX711_OFS_L_3, // Tare offset low 16b
+	ADR_HX711_OFS_H_3, // Tare offset high 16b
 };

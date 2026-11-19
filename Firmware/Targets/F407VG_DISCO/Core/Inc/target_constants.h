@@ -52,6 +52,7 @@
 #define CANBUTTONS // Requires CAN
 #define CANANALOG // Requires CAN
 #define ADS111XANALOG // Requires I2C
+#define HX711ANALOG // Bit-banged HX711 load cell ADCs
 #define SIMPLEMOTION
 
 //#define UARTCOMMANDS
@@ -102,6 +103,19 @@ extern volatile uint32_t ADC1_BUF[ADC1_CHANNELS]; // Buffer
 #define ADC_INTREF_VAL ADC1_BUF[4] // ADC1 ch 5.
 
 #define BUTTON_PINS 8
+
+/*
+ * HX711 load cell ADCs. One entry per chip: {SCK port, SCK pin, DOUT port, DOUT pin}.
+ * Chips that share the same SCK pin are clocked and read together (one clock line, one data line each).
+ * Chips can also use separate SCK pins. Up to 4 chips (limited by flash addresses).
+ * The "hx711.chips" command selects how many of these entries are used (default 1).
+ * Defaults use the free MMOS button header pins PC6-PC9 (unused by this target).
+ */
+#define HX711_PINS { \
+	{GPIOC, GPIO_PIN_7, GPIOC, GPIO_PIN_6}, /* Chip 0: SCK PC7, DOUT PC6 */ \
+	{GPIOC, GPIO_PIN_7, GPIOC, GPIO_PIN_8}, /* Chip 1: SCK PC7 (shared), DOUT PC8 */ \
+	{GPIOC, GPIO_PIN_7, GPIOC, GPIO_PIN_9}, /* Chip 2: SCK PC7 (shared), DOUT PC9 */ \
+}
 
 //extern SPI_HandleTypeDef hspi1;
 //#define HSPIDRV hspi1
