@@ -172,6 +172,8 @@ endif
 CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 
 CXXFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPTCPP) -Wall -fdata-sections -ffunction-sections -fno-exceptions -fno-use-cxa-atexit -std=gnu++20 -fstack-usage -Wno-volatile -mno-unaligned-access
+# Generate dependency information so C++ files rebuild when a header changes (stale objects with an old class layout corrupt memory)
+CXXFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 
 #######################################
 # LDFLAGS
