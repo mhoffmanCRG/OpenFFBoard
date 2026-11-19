@@ -1,6 +1,6 @@
 [submodule "Configurator"]
 	path = Configurator
-	url = https://github.com/Ultrawipf/OpenFFBoard-configurator.git
+	url = https://github.com/mhoffmanCRG/OpenFFBoard-configurator.git
 	branch = .
 [submodule "Hardware"]
 	path = Hardware
