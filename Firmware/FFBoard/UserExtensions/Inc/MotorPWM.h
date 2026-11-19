@@ -15,6 +15,7 @@
 #include "target_constants.h"
 //#include "cpp_target_config.h"
 #include "PersistentStorage.h"
+#include "thread.hpp"
 
 extern TIM_HandleTypeDef TIM_PWM;
 
@@ -51,10 +52,13 @@ struct PWMConfig{
  * Can output different types of PWM signals based on a torque input.
  */
 
-class MotorPWM: public MotorDriver,public CommandHandler,public PersistentStorage{
+class MotorPWM: public MotorDriver,public CommandHandler,public PersistentStorage,public cpp_freertos::Thread{
 	enum class MotorPWM_commands : uint32_t {
-		mode,freq,dir
+		mode,freq,dir,duty,torque,hz,active,minduty,autozero,calibrate,calstate,zero,calfail,calduty,caltravel,calstartv,calhigh,callow
 	};
+public:
+	enum class AutoZeroState : uint8_t {NOT_RUN=0,RUNNING=1,OK=2,FAILED=3};
+	enum class AutoZeroFail : uint8_t {NONE=0,NOT_PWMDIR=1,NO_ENCODER=2,STOPPED=3,NO_MOVEMENT=4,TRAVEL=5,NOT_STOPPING=6,NO_LOW_EDGE=7};
 public:
 	MotorPWM();
 	virtual ~MotorPWM();
@@ -66,6 +70,9 @@ public:
 	void turn(int16_t power);
 	void stopMotor();
 	void startMotor();
+	bool motorReady() override;
+
+	void Run(); // Auto zero thread
 
 	void setPwmSpeed(SpeedPWM_DRV spd);
 	SpeedPWM_DRV getPwmSpeed();
@@ -95,12 +102,72 @@ private:
 	SpeedPWM_DRV pwmspeed = SpeedPWM_DRV::LOW;
 	ModePWM_DRV mode = ModePWM_DRV::CENTERED_PWM;
 	bool active = false;
+	int16_t lastPower = 0; // Last torque sent to the output (after direction inversion)
+
+	static const uint16_t MINDUTY_DEFAULT = 10; // 1%
+	static const uint16_t MINDUTY_MAX = 254; // 25.4%
+	uint16_t minDuty = MINDUTY_DEFAULT; // PWM/DIR duty at zero torque in 0.1% steps
+	void setMinDuty(uint16_t val);
+
+	/*
+	 * Auto zero (PWM/DIR mode): on the first motor start after power up, starting at minDuty:
+	 * 1. If the wheel already turns (servo drive zero far above) ramp up fast until it stops.
+	 * 2. Ramp up slowly until it starts turning forward (upper edge of the friction band).
+	 * 3. Ramp down slowly until it stops and starts turning backwards (lower edge).
+	 * The middle of both edges is used as zero torque point instead of minDuty.
+	 * Finds the servo drives analog zero when its reference floats.
+	 */
+	bool autoZeroEnabled = true;
+	volatile bool autoZeroRequested = false;
+	volatile bool calibrating = false;
+	volatile AutoZeroState autoZeroState = AutoZeroState::NOT_RUN;
+	float autoZeroFrac = 0; // Found zero duty as fraction of the period. 0 = not calibrated, use minDuty
+	// Diagnostics of the last auto zero run
+	AutoZeroFail calFail = AutoZeroFail::NONE;
+	uint32_t calEndDuty = 0; // Duty at the end in 0.01%
+	int32_t calTravel = 0; // Encoder counts from start position at the end
+	int32_t calStartV = 0; // Encoder counts moved in the velocity window before ramping (wheel already turning?)
+	uint32_t calHigh = 0; // Duty where it started turning forward in 0.01%
+	uint32_t calLow = 0; // Duty where it started turning backwards in 0.01%
+	bool runAutoZero(float* zeroFrac);
+	bool calSetPWM(uint32_t val); // Writes pulse only if still active. Returns false if aborted
+	uint32_t zeroPulse() const {
+		if(autoZeroFrac <= 0)
+			return minDacPulse();
+		return std::max<uint32_t>((uint32_t)(autoZeroFrac * period), (period + 4095) / 4096);
+	}
+	void setIdleOutput(); // Zero torque output in PWM/DIR mode without changing active state
+
+	static const uint32_t AUTOZERO_STARTDELAY_MS = 2000; // Let the servo drive start
+	static const uint32_t AUTOZERO_STEP_MS = 20;
+	static const uint32_t AUTOZERO_FAST_STEP = 10; // 0.1% per step = 5%/s while the wheel still turns
+	static const uint32_t AUTOZERO_SLOW_STEP = 1; // 0.01% per step = 0.5%/s to find the edges
+	static const uint32_t AUTOZERO_MAXDUTY_PERCENT = 25; // Abort above this duty
+	static const int32_t AUTOZERO_MAXTRAVEL_TURNS = 3; // Abort if the wheel turned further than this from the start
+	static const uint32_t AUTOZERO_HIST = 5; // Velocity window = AUTOZERO_HIST * AUTOZERO_STEP_MS
+
+	uint32_t getPWM(uint8_t ccr);
+	uint32_t getDuty(); // Duty of the main output channel in 0.01%
+	uint32_t getFrequency(); // Actual PWM frequency in Hz
 
 	/**
 	 * The timer channels are mapped in the cpp_target_config files
 	 */
 	static const PWMConfig timerConfig;
 	static std::pair<uint16_t,uint16_t> freqToPeriodPsc(uint32_t freq);
+
+	/**
+	 * Pulse at zero torque in PWM/DIR mode (minDuty, default 1%). Torque is scaled from here to 100%.
+	 * PWM-to-voltage DACs like the LTC2644/LTC2645 (e.g. on MMOS boards) enter an idle state
+	 * (zero-scale or high impedance, depending on IDLSEL) if the input stays at a constant level for >60ms.
+	 * A high impedance output floats and gives a random offset voltage. Keeping the input toggling
+	 * makes the DAC actively drive a known voltage at zero torque that the servo drive offset can be zeroed to.
+	 * Never less than 1/4096 of the period so the DAC can't idle even with minDuty 0.
+	 */
+	uint32_t minDacPulse() const {
+		uint32_t p = ((uint64_t)period * minDuty) / 1000;
+		return std::max<uint32_t>(p, (period + 4095) / 4096);
+	}
 };
 
 
