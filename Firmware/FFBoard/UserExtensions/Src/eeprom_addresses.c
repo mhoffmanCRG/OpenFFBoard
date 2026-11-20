@@ -72,8 +72,9 @@ const uint16_t VirtAddVarTab[NB_OF_VAR] =
 	ADR_FFB_EFFECTS3, // 0-7 friction ramp up zone, 8-9 filterProfile
 // Button Sources:
 	ADR_ADS111X_CONF1,
-	ADR_HX711_CONF1, // 0-2 chips, 3-4 gain, 5-8 shift, 9 autotare off, 10-11 processing, 12-15 invert
-	ADR_HX711_CONF2, // 0-3 pedal mode mask (0% at no load)
+	ADR_HX711_CONF1, // 0-2 chips, 3-4 gain chip 0 (legacy), 5-8 shift chip 0 (legacy), 9 autotare off, 10-11 processing, 12-15 invert
+	ADR_HX711_CONF2, // 0-3 pedal mode mask (0% at no load), 4-11 gain per chip (2b each)
+	ADR_HX711_CONF3, // Shift per chip (4b each)
 // How many axis configured 1-3
 	ADR_AXIS_COUNT,
 // AXIS1
@@ -291,8 +292,9 @@ const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR] =
 	ADR_FFB_EFFECTS3, // 0-7 friction ramp up zone, 8-9 filterProfile
 // Button Sources:
 	ADR_ADS111X_CONF1,
-	ADR_HX711_CONF1, // 0-2 chips, 3-4 gain, 5-8 shift, 9 autotare off, 10-11 processing, 12-15 invert
-	ADR_HX711_CONF2, // 0-3 pedal mode mask (0% at no load)
+	ADR_HX711_CONF1, // 0-2 chips, 3-4 gain chip 0 (legacy), 5-8 shift chip 0 (legacy), 9 autotare off, 10-11 processing, 12-15 invert
+	ADR_HX711_CONF2, // 0-3 pedal mode mask (0% at no load), 4-11 gain per chip (2b each)
+	ADR_HX711_CONF3, // Shift per chip (4b each)
 // How many axis configured 1-3
 	ADR_AXIS_COUNT,
 // AXIS1

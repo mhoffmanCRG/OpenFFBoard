@@ -13,11 +13,11 @@
 
 #include "main.h"
 // Change this to the amount of currently registered variables
-#define NB_OF_VAR 182
+#define NB_OF_VAR 183
 extern const uint16_t VirtAddVarTab[NB_OF_VAR];
 
 // Amount of variables in exportable list
-#define NB_EXPORTABLE_ADR 167
+#define NB_EXPORTABLE_ADR 168
 extern const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR];
 
 
@@ -90,8 +90,9 @@ uint16_t EE_ReadVariable(uint16_t VirtAddress, uint16_t* Data) will return 1 if 
 #define ADR_FFB_EFFECTS3 0x286 // 0-7 friction ramp up zone, 8-9 filterProfile
 // Button Sources:
 #define ADR_ADS111X_CONF1 0x290
-#define ADR_HX711_CONF1 0x291 // 0-2 chips, 3-4 gain, 5-8 shift, 9 autotare off, 10-11 processing, 12-15 invert
-#define ADR_HX711_CONF2 0x292 // 0-3 pedal mode mask (0% at no load)
+#define ADR_HX711_CONF1 0x291 // 0-2 chips, 3-4 gain chip 0 (legacy), 5-8 shift chip 0 (legacy), 9 autotare off, 10-11 processing, 12-15 invert
+#define ADR_HX711_CONF2 0x292 // 0-3 pedal mode mask (0% at no load), 4-11 gain per chip (2b each)
+#define ADR_HX711_CONF3 0x293 // Shift per chip (4b each)
 // How many axis configured 1-3
 #define ADR_AXIS_COUNT 0x300
 // AXIS1

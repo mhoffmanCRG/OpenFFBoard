@@ -57,8 +57,10 @@ public:
 	uint8_t getChips() const {return chips;}
 	uint8_t getMaxChips() const {return maxChips;}
 
+	void setGainMode(uint8_t chip, HX711_Gain gain);
 	void setGainMode(HX711_Gain gain);
-	HX711_Gain getGainMode() const {return gain;}
+	HX711_Gain getGainMode(uint8_t chip) const {return chip < MAX_CHIPS ? gains[chip] : HX711_Gain::A128;}
+	uint8_t getSckShareMask(uint8_t chip) const;
 
 	bool isReady(uint8_t chip) const;
 	uint8_t getAliveMask() const;
@@ -83,12 +85,15 @@ protected:
 	uint8_t groupCount = 0;
 	std::array<Group,MAX_CHIPS> groups;
 	std::array<uint32_t,MAX_CHIPS> lastReady = {0};
-	volatile HX711_Gain gain = HX711_Gain::A128;
+	std::array<volatile HX711_Gain,MAX_CHIPS> gains = {}; // Per chip. Chips sharing a SCK pin always hold the same value
 };
 
 
 /**
  * Analog source reading up to MAX_CHIPS HX711 chips. One axis per chip.
+ *
+ * Channel/gain and shift are set per chip. Chips sharing a SCK pin receive the same clock pulses,
+ * so they must use the same channel/gain. Setting it on one chip changes all chips on that clock.
  *
  * Output per axis: ((raw - tare offset) >> shift), optionally inverted, clipped to 16 bit
  * and then passed through the usual analog processing (filter, autorange or manual min/max).
@@ -97,7 +102,7 @@ protected:
  */
 class HX711_AnalogSource : public HX711, public AnalogSource, public CommandHandler, public AnalogAxisProcessing, public cpp_freertos::Thread {
 	enum class HX711_AnalogSource_commands : uint32_t {
-		chips,maxchips,gain,shift,invert,autotare,tare,offset,counts,status,pedal
+		chips,maxchips,gain,shift,invert,autotare,tare,offset,counts,status,pedal,sckshare
 	};
 
 public:
@@ -127,7 +132,7 @@ private:
 	int32_t getTaredCounts(uint8_t chip) const;
 
 	volatile uint8_t requestedChips = 1; // Applied by the sampling thread
-	uint8_t shift = 8; // 24 bit -> 16 bit by default
+	std::array<uint8_t,MAX_CHIPS> shifts = {8,8,8,8}; // Per chip. 24 bit -> 16 bit by default
 	uint8_t invertMask = 0;
 	uint8_t pedalMask = (1 << MAX_CHIPS) - 1; // Pedal mode: no load = 0% (-32767), counts>>shift = 65534 -> 100%
 	bool autotare = true;

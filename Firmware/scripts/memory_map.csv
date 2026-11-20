@@ -54,8 +54,9 @@ Section comment,Name,Value,Comment on key,VirtAddVarTab,exportableFlashAddresses
 ,ADR_FFB_EFFECTS3,0x286,"// 0-7 friction ramp up zone, 8-9 filterProfile",1,1
 // Button Sources:,,,,,
 ,ADR_ADS111X_CONF1,0x290,,1,1
-,ADR_HX711_CONF1,0x291,"// 0-2 chips, 3-4 gain, 5-8 shift, 9 autotare off, 10-11 processing, 12-15 invert",1,1
-,ADR_HX711_CONF2,0x292,"// 0-3 pedal mode mask (0% at no load)",1,1
+,ADR_HX711_CONF1,0x291,"// 0-2 chips, 3-4 gain chip 0 (legacy), 5-8 shift chip 0 (legacy), 9 autotare off, 10-11 processing, 12-15 invert",1,1
+,ADR_HX711_CONF2,0x292,"// 0-3 pedal mode mask (0% at no load), 4-11 gain per chip (2b each)",1,1
+,ADR_HX711_CONF3,0x293,"// Shift per chip (4b each)",1,1
 // How many axis configured 1-3,,,,,
 ,ADR_AXIS_COUNT,0x300,,1,1
 // AXIS1,,,,,

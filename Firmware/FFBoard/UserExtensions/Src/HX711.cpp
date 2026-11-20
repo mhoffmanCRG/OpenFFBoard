@@ -52,14 +52,45 @@ void HX711::setChips(uint8_t count){
 }
 
 /**
- * Sets the input channel and gain for the following conversions of all chips.
+ * Bitmask of the pin table entries that use the same SCK pin as chip (including chip itself)
+ */
+uint8_t HX711::getSckShareMask(uint8_t chip) const{
+	if(chip >= maxChips){
+		return 0;
+	}
+	uint8_t mask = 0;
+	for(uint8_t i = 0; i < maxChips; i++){
+		if(pins[i].sckPort == pins[chip].sckPort && pins[i].sckPin == pins[chip].sckPin){
+			mask |= 1 << i;
+		}
+	}
+	return mask;
+}
+
+/**
+ * Sets the input channel and gain for the following conversions of one chip.
+ * Chips on the same SCK pin get identical clock pulses, so they are changed too.
  * The first sample after a change still uses the previous setting.
  */
-void HX711::setGainMode(HX711_Gain gain){
+void HX711::setGainMode(uint8_t chip, HX711_Gain gain){
 	if((uint8_t)gain > (uint8_t)HX711_Gain::B32){
 		gain = HX711_Gain::A128;
 	}
-	this->gain = gain;
+	const uint8_t mask = getSckShareMask(chip);
+	for(uint8_t i = 0; i < MAX_CHIPS; i++){
+		if(mask & (1 << i)){
+			gains[i] = gain;
+		}
+	}
+}
+
+/**
+ * Sets the input channel and gain of all chips
+ */
+void HX711::setGainMode(HX711_Gain gain){
+	for(uint8_t i = 0; i < maxChips; i++){
+		setGainMode(i, gain);
+	}
 }
 
 /**
@@ -188,6 +219,7 @@ uint8_t HX711::poll(int32_t* out){
 void HX711::readGroup(uint8_t groupIdx, int32_t* out){
 	const Group& group = groups[groupIdx];
 	std::array<uint32_t,MAX_CHIPS> vals = {0};
+	const HX711_Gain gain = gains[group.members[0]]; // Same for all members of a group
 	const uint8_t extraPulses = gain == HX711_Gain::A128 ? 1 : (gain == HX711_Gain::B32 ? 2 : 3);
 	const uint32_t sckSet = group.sckPin;
 	const uint32_t sckReset = (uint32_t)group.sckPin << 16;
@@ -253,8 +285,9 @@ HX711_AnalogSource::HX711_AnalogSource() :
 	CommandHandler::registerCommands();
 	registerCommand("chips", HX711_AnalogSource_commands::chips, "Number of HX711 chips used",CMDFLAG_GET | CMDFLAG_SET);
 	registerCommand("maxchips", HX711_AnalogSource_commands::maxchips, "Chips defined by the target pin table",CMDFLAG_GET);
-	registerCommand("gain", HX711_AnalogSource_commands::gain, "Channel and gain (0=A x128, 1=A x64, 2=B x32)",CMDFLAG_GET | CMDFLAG_SET | CMDFLAG_INFOSTRING);
-	registerCommand("shift", HX711_AnalogSource_commands::shift, "Right shift from 24b counts to 16b axis (0-15)",CMDFLAG_GET | CMDFLAG_SET);
+	registerCommand("gain", HX711_AnalogSource_commands::gain, "Channel and gain (0=A x128, 1=A x64, 2=B x32). adr=chip, no adr=all (get: chip 0). Also sets chips sharing the SCK pin",CMDFLAG_GET | CMDFLAG_SET | CMDFLAG_GETADR | CMDFLAG_SETADR | CMDFLAG_INFOSTRING);
+	registerCommand("shift", HX711_AnalogSource_commands::shift, "Right shift from 24b counts to 16b axis (0-15). adr=chip, no adr=all (get: chip 0)",CMDFLAG_GET | CMDFLAG_SET | CMDFLAG_GETADR | CMDFLAG_SETADR);
+	registerCommand("sckshare", HX711_AnalogSource_commands::sckshare, "Chips on the same SCK pin as chip adr (bitmask). They share channel/gain",CMDFLAG_GETADR);
 	registerCommand("invert", HX711_AnalogSource_commands::invert, "Invert axis (bitmask, bit=chip)",CMDFLAG_GET | CMDFLAG_SET);
 	registerCommand("pedal", HX711_AnalogSource_commands::pedal, "Pedal mode: no load = 0% (bitmask, bit=chip)",CMDFLAG_GET | CMDFLAG_SET);
 	registerCommand("autotare", HX711_AnalogSource_commands::autotare, "Tare all chips after startup",CMDFLAG_GET | CMDFLAG_SET);
@@ -275,13 +308,21 @@ HX711_AnalogSource::~HX711_AnalogSource(){
 
 void HX711_AnalogSource::saveFlash(){
 	uint16_t conf = requestedChips & 0x7;
-	conf |= ((uint8_t)getGainMode() & 0x3) << 3;
-	conf |= (shift & 0xF) << 5;
+	conf |= ((uint8_t)getGainMode(0) & 0x3) << 3; // Legacy single setting, read only if CONF3 is missing
+	conf |= (shifts[0] & 0xF) << 5;
 	conf |= (autotare ? 0 : 1) << 9;
 	conf |= (AnalogAxisProcessing::encodeAnalogProcessingConfToInt(AnalogAxisProcessing::getAnalogProcessingConfig()) & 0x3) << 10;
 	conf |= (invertMask & 0xF) << 12;
 	Flash_Write(ADR_HX711_CONF1, conf);
-	Flash_Write(ADR_HX711_CONF2, pedalMask & 0xF);
+
+	uint16_t conf2 = pedalMask & 0xF;
+	uint16_t conf3 = 0;
+	for(uint8_t i = 0; i < MAX_CHIPS; i++){
+		conf2 |= ((uint8_t)getGainMode(i) & 0x3) << (4 + 2*i);
+		conf3 |= (shifts[i] & 0xF) << (4*i);
+	}
+	Flash_Write(ADR_HX711_CONF2, conf2);
+	Flash_Write(ADR_HX711_CONF3, conf3);
 
 	AnalogAxisProcessing::saveMinMaxValues(minMaxValAddr);
 
@@ -297,15 +338,26 @@ void HX711_AnalogSource::restoreFlash(){
 	if(Flash_Read(ADR_HX711_CONF1, &conf)){
 		const uint8_t n = conf & 0x7;
 		requestedChips = clip<uint8_t,uint8_t>(n == 0 ? 1 : n, 1, getMaxChips());
+		// Single gain and shift for all chips (settings saved before per chip values existed)
 		setGainMode((HX711_Gain)((conf >> 3) & 0x3));
-		shift = (conf >> 5) & 0xF;
+		shifts.fill((conf >> 5) & 0xF);
 		autotare = ((conf >> 9) & 0x1) == 0;
 		AnalogAxisProcessing::setAnalogProcessingConfig(AnalogAxisProcessing::decodeAnalogProcessingConfFromInt((conf >> 10) & 0x3));
 		invertMask = (conf >> 12) & 0xF;
 	}
 	uint16_t conf2;
-	if(Flash_Read(ADR_HX711_CONF2, &conf2)){
+	const bool hasConf2 = Flash_Read(ADR_HX711_CONF2, &conf2, false);
+	if(hasConf2){
 		pedalMask = conf2 & 0xF;
+	}
+	uint16_t conf3;
+	if(hasConf2 && Flash_Read(ADR_HX711_CONF3, &conf3, false)){ // 0xffff is valid (all shifts 15)
+		// Per chip values. Gain bits of CONF2 are only valid if CONF3 was written with them.
+		// Apply in reverse so the lowest chip of a shared SCK group wins if the stored values disagree
+		for(int8_t i = MAX_CHIPS - 1; i >= 0; i--){
+			setGainMode(i, (HX711_Gain)((conf2 >> (4 + 2*i)) & 0x3));
+			shifts[i] = (conf3 >> (4*i)) & 0xF;
+		}
 	}
 
 	AnalogAxisProcessing::restoreMinMaxValues(minMaxValAddr);
@@ -385,7 +437,7 @@ std::vector<int32_t>* HX711_AnalogSource::getAxes(){
 	for(uint8_t i = 0; i < n; i++){
 		int32_t val = 0; // Disconnected chips read as 0 (released)
 		if(alive & (1 << i)){
-			val = getTaredCounts(i) >> shift;
+			val = getTaredCounts(i) >> shifts[i];
 			if(invertMask & (1 << i)){
 				val = -val;
 			}
@@ -424,10 +476,17 @@ CommandStatus HX711_AnalogSource::command(const ParsedCommand& cmd,std::vector<C
 		break;
 
 	case HX711_AnalogSource_commands::gain:
+		if((cmd.type == CMDtype::setat || cmd.type == CMDtype::getat) && (cmd.adr < 0 || cmd.adr >= getMaxChips())){
+			return CommandStatus::ERR;
+		}
 		if(cmd.type == CMDtype::set){
 			setGainMode((HX711_Gain)clip<int64_t,int64_t>(cmd.val, 0, 2));
+		}else if(cmd.type == CMDtype::setat){
+			setGainMode(cmd.adr, (HX711_Gain)clip<int64_t,int64_t>(cmd.val, 0, 2));
 		}else if(cmd.type == CMDtype::get){
-			replies.emplace_back((uint8_t)getGainMode());
+			replies.emplace_back((uint8_t)getGainMode(0));
+		}else if(cmd.type == CMDtype::getat){
+			replies.emplace_back((uint8_t)getGainMode(cmd.adr));
 		}else if(cmd.type == CMDtype::info){
 			replies.emplace_back("A x128 (20mV):0,A x64 (40mV):1,B x32 (80mV):2");
 		}else{
@@ -436,10 +495,25 @@ CommandStatus HX711_AnalogSource::command(const ParsedCommand& cmd,std::vector<C
 		break;
 
 	case HX711_AnalogSource_commands::shift:
+		if((cmd.type == CMDtype::setat || cmd.type == CMDtype::getat) && (cmd.adr < 0 || cmd.adr >= MAX_CHIPS)){
+			return CommandStatus::ERR;
+		}
 		if(cmd.type == CMDtype::set){
-			shift = clip<int64_t,int64_t>(cmd.val, 0, 15);
+			shifts.fill(clip<int64_t,int64_t>(cmd.val, 0, 15));
+		}else if(cmd.type == CMDtype::setat){
+			shifts[cmd.adr] = clip<int64_t,int64_t>(cmd.val, 0, 15);
 		}else if(cmd.type == CMDtype::get){
-			replies.emplace_back(shift);
+			replies.emplace_back(shifts[0]);
+		}else if(cmd.type == CMDtype::getat){
+			replies.emplace_back(shifts[cmd.adr]);
+		}else{
+			return CommandStatus::ERR;
+		}
+		break;
+
+	case HX711_AnalogSource_commands::sckshare:
+		if(cmd.type == CMDtype::getat && cmd.adr >= 0 && cmd.adr < getMaxChips()){
+			replies.emplace_back(getSckShareMask(cmd.adr));
 		}else{
 			return CommandStatus::ERR;
 		}
