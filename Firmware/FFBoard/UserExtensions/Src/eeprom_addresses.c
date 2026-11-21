@@ -44,8 +44,17 @@ const uint16_t VirtAddVarTab[NB_OF_VAR] =
 // Local encoder
 	ADR_ENCLOCAL_CPR,
 	ADR_ENCLOCAL_OFS,
+	ADR_ENCLOCAL_CPR_2, // Local encoder instance 2 (multi axis targets)
+	ADR_ENCLOCAL_OFS_2,
+	ADR_ENCLOCAL_CPR_3, // Local encoder instance 3
+	ADR_ENCLOCAL_OFS_3,
+	ADR_ENCLOCAL_CPR_4, // Local encoder instance 4
+	ADR_ENCLOCAL_OFS_4,
 // PWM
 	ADR_PWM_MODE,
+	ADR_PWM_MODE_2, // PWM driver instance 2 (multi axis targets)
+	ADR_PWM_MODE_3, // PWM driver instance 3
+	ADR_PWM_MODE_4, // PWM driver instance 4
 // Local analog source
 	ADR_LOCALANALOG_MASK,
 // Shifter Analog
@@ -187,6 +196,18 @@ const uint16_t VirtAddVarTab[NB_OF_VAR] =
 // SSI
 	ADR_SSI_CONF1,
 	ADR_SSI_OFS,
+// AXIS4
+	ADR_AXIS4_CONFIG, // 0-2 ENC, 3-5 DRV
+	ADR_AXIS4_POWER,
+	ADR_AXIS4_DEGREES,
+	ADR_AXIS4_MAX_SPEED, // Store the max speed
+	ADR_AXIS4_MAX_ACCEL, // Store the max accel
+	ADR_AXIS4_ENDSTOP, // 0-7 endstop margin, 8-15 endstop stiffness
+	ADR_AXIS4_EFFECTS1, // 0-7 idlespring, 8-15 damper
+	ADR_AXIS4_SPEEDACCEL_FILTER, // Speed/Accel filter Lowpass profile
+	ADR_AXIS4_ENC_RATIO, // Store the encoder ratio for an axis
+	ADR_AXIS4_EFFECTS2, // 0-7 Friction, 8-15 Inertia
+	ADR_AXIS4_POSTPROCESS1, // 0-7 expo curve
 // Analog min/max calibrations
 	ADR_LOCALANALOG_MIN_0,
 	ADR_LOCALANALOG_MAX_0,
@@ -264,8 +285,17 @@ const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR] =
 // Local encoder
 	ADR_ENCLOCAL_CPR,
 	ADR_ENCLOCAL_OFS,
+	ADR_ENCLOCAL_CPR_2, // Local encoder instance 2 (multi axis targets)
+	ADR_ENCLOCAL_OFS_2,
+	ADR_ENCLOCAL_CPR_3, // Local encoder instance 3
+	ADR_ENCLOCAL_OFS_3,
+	ADR_ENCLOCAL_CPR_4, // Local encoder instance 4
+	ADR_ENCLOCAL_OFS_4,
 // PWM
 	ADR_PWM_MODE,
+	ADR_PWM_MODE_2, // PWM driver instance 2 (multi axis targets)
+	ADR_PWM_MODE_3, // PWM driver instance 3
+	ADR_PWM_MODE_4, // PWM driver instance 4
 // Local analog source
 	ADR_LOCALANALOG_MASK,
 // Shifter Analog
@@ -407,6 +437,18 @@ const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR] =
 // SSI
 	ADR_SSI_CONF1,
 	ADR_SSI_OFS,
+// AXIS4
+	ADR_AXIS4_CONFIG, // 0-2 ENC, 3-5 DRV
+	ADR_AXIS4_POWER,
+	ADR_AXIS4_DEGREES,
+	ADR_AXIS4_MAX_SPEED, // Store the max speed
+	ADR_AXIS4_MAX_ACCEL, // Store the max accel
+	ADR_AXIS4_ENDSTOP, // 0-7 endstop margin, 8-15 endstop stiffness
+	ADR_AXIS4_EFFECTS1, // 0-7 idlespring, 8-15 damper
+	ADR_AXIS4_SPEEDACCEL_FILTER, // Speed/Accel filter Lowpass profile
+	ADR_AXIS4_ENC_RATIO, // Store the encoder ratio for an axis
+	ADR_AXIS4_EFFECTS2, // 0-7 Friction, 8-15 Inertia
+	ADR_AXIS4_POSTPROCESS1, // 0-7 expo curve
 // Analog min/max calibrations
 	ADR_LOCALANALOG_MIN_0,
 	ADR_LOCALANALOG_MAX_0,

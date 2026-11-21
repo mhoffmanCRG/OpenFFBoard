@@ -12,8 +12,16 @@ static const uint8_t SW_VERSION_INT[3] = {1,17,1}; // Version as array. 8 bit ea
 #ifndef MAX_AXIS
 #define MAX_AXIS 2 // ONLY USE 2 for now else screws HID Reports
 #endif
-#if !(MAX_AXIS > 0 && MAX_AXIS <= 3)
-#error "MAX_AXIS must be between 1 and 3"
+#if !(MAX_AXIS > 0 && MAX_AXIS <= 4)
+#error "MAX_AXIS must be between 1 and 4"
+#endif
+/*
+ * More than 2 axes are only supported by main classes that do not use the axes for the HID PID descriptor
+ * (FFB wheel + command axes). The PID descriptors only describe up to 2 FFB axes.
+ * The 32 bit gamepad descriptor only supports up to 3 axes.
+ */
+#if MAX_AXIS > 3 && defined(HIDAXISRES_USE_32B_DESC)
+#error "HIDAXISRES_USE_32B_DESC supports at most 3 axes"
 #endif
 
 #define FLASH_VERSION 0 // Counter to increase whenever a full flash erase is required.

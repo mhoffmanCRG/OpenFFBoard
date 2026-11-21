@@ -14,6 +14,12 @@
 #include "MotorSimplemotion.h"
 #include "RmdMotorCAN.h"
 #include "critical.hpp"
+#ifdef LOCALENCODER_MULTI
+#include "EncoderLocal.h"
+#include "MtEncoderSPI.h"
+#include "EncoderBissC.h"
+#include "EncoderSSI.h"
+#endif
 
 //////////////////////////////////////////////
 /*
@@ -66,7 +72,11 @@ const std::vector<class_entry<MotorDriver>> Axis::axis2_drivers =
 	add_class<TMC_2, MotorDriver>(2),
 #endif
 #ifdef PWMDRIVER
+#ifdef PWMDRIVER_MULTI
+	add_class<MotorPWM_N<1>, MotorDriver>(4), // Own PWM channel and DIR pin
+#else
 	add_class<MotorPWM, MotorDriver>(4),
+#endif
 #endif
 #ifdef ODRIVE
 	add_class<ODriveCAN2,MotorDriver>(6),
@@ -82,6 +92,71 @@ const std::vector<class_entry<MotorDriver>> Axis::axis2_drivers =
 //#endif
 };
 
+#if defined(PWMDRIVER_MULTI) && PWMDRIVER_MULTI >= 3
+/**
+ * Motor drivers of the third axis on multi PWM targets
+ */
+const std::vector<class_entry<MotorDriver>> Axis::axis3_drivers =
+{
+	add_class<MotorDriver, MotorDriver>(0),
+	add_class<MotorPWM_N<2>, MotorDriver>(4),
+};
+#endif
+#if defined(PWMDRIVER_MULTI) && PWMDRIVER_MULTI >= 4
+/**
+ * Motor drivers of the fourth axis on multi PWM targets
+ */
+const std::vector<class_entry<MotorDriver>> Axis::axis4_drivers =
+{
+	add_class<MotorDriver, MotorDriver>(0),
+	add_class<MotorPWM_N<3>, MotorDriver>(4),
+};
+#endif
+
+#ifdef LOCALENCODER_MULTI
+/**
+ * Encoder list of an axis with its own local encoder instance. Same ids as Encoder::all_encoders
+ */
+template<class LOCAL>
+static std::vector<class_entry<Encoder>> makeAxisEncoders(){
+	return {
+		add_class<Encoder, Encoder>(0),
+		add_class<LOCAL, Encoder>(2),
+#ifdef MTENCODERSPI
+		add_class<MtEncoderSPI, Encoder>(4),
+#endif
+#ifdef BISSENCODER
+		add_class<EncoderBissC, Encoder>(5),
+#endif
+#ifdef SSIENCODER
+		add_class<EncoderSSI, Encoder>(6),
+#endif
+	};
+}
+const std::vector<class_entry<Encoder>> Axis::axis_encoders[LOCALENCODER_MULTI] = {
+	makeAxisEncoders<EncoderLocal>(),
+#if LOCALENCODER_MULTI >= 2
+	makeAxisEncoders<EncoderLocal_N<1>>(),
+#endif
+#if LOCALENCODER_MULTI >= 3
+	makeAxisEncoders<EncoderLocal_N<2>>(),
+#endif
+#if LOCALENCODER_MULTI >= 4
+	makeAxisEncoders<EncoderLocal_N<3>>(),
+#endif
+};
+#endif
+
+/**
+ * Settings addresses per axis
+ */
+static const AxisFlashAddrs axisFlashAddrTable[] = {
+	{ADR_AXIS1_CONFIG, ADR_AXIS1_MAX_SPEED, ADR_AXIS1_MAX_ACCEL, ADR_AXIS1_ENDSTOP, ADR_AXIS1_POWER, ADR_AXIS1_DEGREES,ADR_AXIS1_EFFECTS1,ADR_AXIS1_EFFECTS2,ADR_AXIS1_ENC_RATIO, ADR_AXIS1_SPEEDACCEL_FILTER,ADR_AXIS1_POSTPROCESS1},
+	{ADR_AXIS2_CONFIG, ADR_AXIS2_MAX_SPEED, ADR_AXIS2_MAX_ACCEL, ADR_AXIS2_ENDSTOP, ADR_AXIS2_POWER, ADR_AXIS2_DEGREES,ADR_AXIS2_EFFECTS1,ADR_AXIS2_EFFECTS2,ADR_AXIS2_ENC_RATIO, ADR_AXIS2_SPEEDACCEL_FILTER,ADR_AXIS2_POSTPROCESS1},
+	{ADR_AXIS3_CONFIG, ADR_AXIS3_MAX_SPEED, ADR_AXIS3_MAX_ACCEL, ADR_AXIS3_ENDSTOP, ADR_AXIS3_POWER, ADR_AXIS3_DEGREES,ADR_AXIS3_EFFECTS1,ADR_AXIS3_EFFECTS2,ADR_AXIS3_ENC_RATIO, ADR_AXIS3_SPEEDACCEL_FILTER,ADR_AXIS3_POSTPROCESS1},
+	{ADR_AXIS4_CONFIG, ADR_AXIS4_MAX_SPEED, ADR_AXIS4_MAX_ACCEL, ADR_AXIS4_ENDSTOP, ADR_AXIS4_POWER, ADR_AXIS4_DEGREES,ADR_AXIS4_EFFECTS1,ADR_AXIS4_EFFECTS2,ADR_AXIS4_ENC_RATIO, ADR_AXIS4_SPEEDACCEL_FILTER,ADR_AXIS4_POSTPROCESS1},
+};
+
 
 /**
  * Axis class manages motor drivers and passes effect torque to the motor drivers
@@ -90,30 +165,39 @@ Axis::Axis(char axis,volatile Control_t* control) :CommandHandler("axis", CLSID_
 {
 	this->axis = axis;
 	this->control = control;
-	if (axis == 'X')
+	// 'X' = first axis. Further axes follow ('Y','Z', then '[' for the fourth)
+	const uint8_t idx = axis - 'X';
+	if (idx < sizeof(axisFlashAddrTable) / sizeof(axisFlashAddrTable[0]))
+	{
+		setInstance(idx);
+		this->flashAddrs = axisFlashAddrTable[idx];
+	}
+	if (idx == 0)
 	{
 		drv_chooser = ClassChooser<MotorDriver>(axis1_drivers);
-		setInstance(0);
-		this->flashAddrs = AxisFlashAddrs({ADR_AXIS1_CONFIG, ADR_AXIS1_MAX_SPEED, ADR_AXIS1_MAX_ACCEL,
-										   ADR_AXIS1_ENDSTOP, ADR_AXIS1_POWER, ADR_AXIS1_DEGREES,ADR_AXIS1_EFFECTS1,ADR_AXIS1_EFFECTS2,ADR_AXIS1_ENC_RATIO,
-										   ADR_AXIS1_SPEEDACCEL_FILTER,ADR_AXIS1_POSTPROCESS1});
 	}
-	else if (axis == 'Y')
+	else if (idx == 1)
 	{
 		drv_chooser = ClassChooser<MotorDriver>(axis2_drivers);
-		setInstance(1);
-		this->flashAddrs = AxisFlashAddrs({ADR_AXIS2_CONFIG, ADR_AXIS2_MAX_SPEED, ADR_AXIS2_MAX_ACCEL,
-										   ADR_AXIS2_ENDSTOP, ADR_AXIS2_POWER, ADR_AXIS2_DEGREES,ADR_AXIS2_EFFECTS1,ADR_AXIS2_EFFECTS2, ADR_AXIS2_ENC_RATIO,
-										   ADR_AXIS2_SPEEDACCEL_FILTER,ADR_AXIS2_POSTPROCESS1});
 	}
-	else if (axis == 'Z')
+#if defined(PWMDRIVER_MULTI) && PWMDRIVER_MULTI >= 3
+	else if (idx == 2)
 	{
-		setInstance(2);
-		this->flashAddrs = AxisFlashAddrs({ADR_AXIS3_CONFIG, ADR_AXIS3_MAX_SPEED, ADR_AXIS3_MAX_ACCEL,
-										   ADR_AXIS3_ENDSTOP, ADR_AXIS3_POWER, ADR_AXIS3_DEGREES,ADR_AXIS3_EFFECTS1,ADR_AXIS3_EFFECTS2,ADR_AXIS3_ENC_RATIO,
-										   ADR_AXIS3_SPEEDACCEL_FILTER,ADR_AXIS3_POSTPROCESS1});
+		drv_chooser = ClassChooser<MotorDriver>(axis3_drivers);
 	}
-
+#endif
+#if defined(PWMDRIVER_MULTI) && PWMDRIVER_MULTI >= 4
+	else if (idx == 3)
+	{
+		drv_chooser = ClassChooser<MotorDriver>(axis4_drivers);
+	}
+#endif
+#ifdef LOCALENCODER_MULTI
+	if (idx < LOCALENCODER_MULTI)
+	{
+		enc_chooser = ClassChooser<Encoder>(axis_encoders[idx]);
+	}
+#endif
 
 	restoreFlash(); // Load parameters
 	CommandHandler::registerCommands(); // Internal commands
@@ -160,6 +244,8 @@ void Axis::registerCommands(){
 	registerCommand("cpr", Axis_commands::cpr, "Reported encoder CPR",CMDFLAG_GET);
 	registerCommand("expo", Axis_commands::expo, "Exponential curve correction (x^(val/exposcale)+1)", CMDFLAG_GET | CMDFLAG_SET);
 	registerCommand("exposcale", Axis_commands::exposcale, "Scaler constant for expo", CMDFLAG_GET);
+	registerCommand("hosttorque", Axis_commands::hosttorque, "Torque from the PC (-32767 to 32767), added to game effects. Resets after hosttimeout", CMDFLAG_GET | CMDFLAG_SET);
+	registerCommand("hosttimeout", Axis_commands::hosttimeout, "Host torque timeout in ms (0 = never)", CMDFLAG_GET | CMDFLAG_SET);
 }
 
 /*
@@ -591,6 +677,7 @@ void Axis::setFxStrengthAndFilter(uint8_t val,uint8_t& valToSet, Biquad& filter)
  */
 void Axis::calculateAxisEffects(bool ffb_on){
 	axisEffectTorque = 0;
+	ffb_on = ffb_on || hostActive(); // A host commanding this axis counts as active FFB (no idle spring)
 
 	if(!ffb_on){
 		axisEffectTorque += updateIdleSpringForce();
@@ -717,6 +804,24 @@ void Axis::setEffectTorque(int32_t torque) {
 	effectTorque = torque;
 }
 
+void Axis::setHostTorque(int32_t torque){
+	hostTorque = clip<int32_t,int32_t>(torque, -0x7fff, 0x7fff);
+	uint32_t now = HAL_GetTick();
+	hostTorqueTick = now == 0 ? 1 : now; // 0 means never received
+}
+
+int32_t Axis::getHostTorque(){
+	return hostActive() ? hostTorque : 0;
+}
+
+bool Axis::hostActive(){
+	const uint32_t tick = hostTorqueTick;
+	if(tick == 0){
+		return false;
+	}
+	return hostTimeoutMs == 0 || (HAL_GetTick() - tick) < hostTimeoutMs;
+}
+
 /** pass in ptr to receive the sum of the effects + endstop torque
  *  return true if torque has changed
 */
@@ -729,6 +834,9 @@ bool Axis::updateTorque(int32_t* totalTorque) {
 
 	// Scale effect torque
 	int32_t torque = effectTorque; // Game effects
+	if(hostActive()){
+		torque = clip<int32_t,int32_t>(torque + hostTorque, -0x7fff, 0x7fff);
+	}
 	if(expo != 1){
 		torque = calculateExpoTorque(torque);
 	}
@@ -1063,6 +1171,19 @@ CommandStatus Axis::command(const ParsedCommand& cmd,std::vector<CommandReply>& 
 	case Axis_commands::exposcale:
 		handleGetSet(cmd, replies, expoScaler); // need to also provide the expoScaler constant
 		break;
+
+	case Axis_commands::hosttorque:
+		if(cmd.type == CMDtype::set){
+			setHostTorque(cmd.val);
+		}else if(cmd.type == CMDtype::get){
+			replies.emplace_back(getHostTorque());
+		}else{
+			return CommandStatus::ERR;
+		}
+		break;
+
+	case Axis_commands::hosttimeout:
+		return handleGetSet(cmd, replies, hostTimeoutMs);
 
 	default:
 		return CommandStatus::NOT_FOUND;

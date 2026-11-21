@@ -79,6 +79,12 @@ public:
 	bool isActive();
 	void setActive(bool active);
 	void calculateEffects(std::vector<std::unique_ptr<Axis>> &axes);
+	/**
+	 * Number of axes (from the first) that receive game effects. Further axes are command axes
+	 * that only use their independent effects and host torque.
+	 */
+	void setFfbAxisCount(uint8_t count){ffbAxisCount = count;}
+	uint8_t getFfbAxisCount(){return ffbAxisCount;}
 	virtual void setFilters(FFB_Effect* effect);
 	void setGain(uint8_t gain);
 	uint8_t getGain();
@@ -106,6 +112,7 @@ public:
 protected:
 
 private:
+	uint8_t ffbAxisCount = MAX_AXIS; // Axes receiving game effects
 	//uint8_t directionEnableMask = 0;
 	// Filters
 	effect_biquad_t filter[2];		// 0 is the default profile and the custom for CFFilter, CUSTOM_PROFILE_ID is the custom slot

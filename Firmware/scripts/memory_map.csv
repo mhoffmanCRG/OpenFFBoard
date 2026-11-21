@@ -26,8 +26,17 @@ Section comment,Name,Value,Comment on key,VirtAddVarTab,exportableFlashAddresses
 // Local encoder,,,,,
 ,ADR_ENCLOCAL_CPR,0x210,,1,1
 ,ADR_ENCLOCAL_OFS,0x211,,1,1
+,ADR_ENCLOCAL_CPR_2,0x212,// Local encoder instance 2 (multi axis targets),1,1
+,ADR_ENCLOCAL_OFS_2,0x213,,1,1
+,ADR_ENCLOCAL_CPR_3,0x214,// Local encoder instance 3,1,1
+,ADR_ENCLOCAL_OFS_3,0x215,,1,1
+,ADR_ENCLOCAL_CPR_4,0x216,// Local encoder instance 4,1,1
+,ADR_ENCLOCAL_OFS_4,0x217,,1,1
 // PWM,,,,,
 ,ADR_PWM_MODE,0x220,,1,1
+,ADR_PWM_MODE_2,0x221,// PWM driver instance 2 (multi axis targets),1,1
+,ADR_PWM_MODE_3,0x222,// PWM driver instance 3,1,1
+,ADR_PWM_MODE_4,0x223,// PWM driver instance 4,1,1
 // Local analog source,,,,,
 ,ADR_LOCALANALOG_MASK,0x230,,1,1
 // Shifter Analog,,,,,
@@ -180,6 +189,18 @@ Section comment,Name,Value,Comment on key,VirtAddVarTab,exportableFlashAddresses
 // SSI,,,,,
 ,ADR_SSI_CONF1,0x413,,1,1
 ,ADR_SSI_OFS,0x414,,1,1
+// AXIS4,,,,,
+,ADR_AXIS4_CONFIG,0x421,"// 0-2 ENC, 3-5 DRV",1,1
+,ADR_AXIS4_POWER,0x422,,1,1
+,ADR_AXIS4_DEGREES,0x423,,1,1
+,ADR_AXIS4_MAX_SPEED,0x424,// Store the max speed,1,1
+,ADR_AXIS4_MAX_ACCEL,0x425,// Store the max accel,1,1
+,ADR_AXIS4_ENDSTOP,0x427,"// 0-7 endstop margin, 8-15 endstop stiffness",1,1
+,ADR_AXIS4_EFFECTS1,0x428,"// 0-7 idlespring, 8-15 damper",1,1
+,ADR_AXIS4_SPEEDACCEL_FILTER,0x429,// Speed/Accel filter Lowpass profile,1,1
+,ADR_AXIS4_ENC_RATIO,0x42A,// Store the encoder ratio for an axis,1,1
+,ADR_AXIS4_EFFECTS2,0x42B,"// 0-7 Friction, 8-15 Inertia",1,1
+,ADR_AXIS4_POSTPROCESS1,0x42C,// 0-7 expo curve,1,1
 // Analog min/max calibrations,,,,,
 ,ADR_LOCALANALOG_MIN_0,0x500,,1,1
 ,ADR_LOCALANALOG_MAX_0,0x501,,1,1

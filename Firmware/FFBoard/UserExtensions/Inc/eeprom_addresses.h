@@ -13,11 +13,11 @@
 
 #include "main.h"
 // Change this to the amount of currently registered variables
-#define NB_OF_VAR 183
+#define NB_OF_VAR 203
 extern const uint16_t VirtAddVarTab[NB_OF_VAR];
 
 // Amount of variables in exportable list
-#define NB_EXPORTABLE_ADR 168
+#define NB_EXPORTABLE_ADR 188
 extern const uint16_t exportableFlashAddresses[NB_EXPORTABLE_ADR];
 
 
@@ -62,8 +62,17 @@ uint16_t EE_ReadVariable(uint16_t VirtAddress, uint16_t* Data) will return 1 if 
 // Local encoder
 #define ADR_ENCLOCAL_CPR 0x210
 #define ADR_ENCLOCAL_OFS 0x211
+#define ADR_ENCLOCAL_CPR_2 0x212 // Local encoder instance 2 (multi axis targets)
+#define ADR_ENCLOCAL_OFS_2 0x213
+#define ADR_ENCLOCAL_CPR_3 0x214 // Local encoder instance 3
+#define ADR_ENCLOCAL_OFS_3 0x215
+#define ADR_ENCLOCAL_CPR_4 0x216 // Local encoder instance 4
+#define ADR_ENCLOCAL_OFS_4 0x217
 // PWM
 #define ADR_PWM_MODE 0x220
+#define ADR_PWM_MODE_2 0x221 // PWM driver instance 2 (multi axis targets)
+#define ADR_PWM_MODE_3 0x222 // PWM driver instance 3
+#define ADR_PWM_MODE_4 0x223 // PWM driver instance 4
 // Local analog source
 #define ADR_LOCALANALOG_MASK 0x230
 // Shifter Analog
@@ -205,6 +214,18 @@ uint16_t EE_ReadVariable(uint16_t VirtAddress, uint16_t* Data) will return 1 if 
 // SSI
 #define ADR_SSI_CONF1 0x413
 #define ADR_SSI_OFS 0x414
+// AXIS4
+#define ADR_AXIS4_CONFIG 0x421 // 0-2 ENC, 3-5 DRV
+#define ADR_AXIS4_POWER 0x422
+#define ADR_AXIS4_DEGREES 0x423
+#define ADR_AXIS4_MAX_SPEED 0x424 // Store the max speed
+#define ADR_AXIS4_MAX_ACCEL 0x425 // Store the max accel
+#define ADR_AXIS4_ENDSTOP 0x427 // 0-7 endstop margin, 8-15 endstop stiffness
+#define ADR_AXIS4_EFFECTS1 0x428 // 0-7 idlespring, 8-15 damper
+#define ADR_AXIS4_SPEEDACCEL_FILTER 0x429 // Speed/Accel filter Lowpass profile
+#define ADR_AXIS4_ENC_RATIO 0x42A // Store the encoder ratio for an axis
+#define ADR_AXIS4_EFFECTS2 0x42B // 0-7 Friction, 8-15 Inertia
+#define ADR_AXIS4_POSTPROCESS1 0x42C // 0-7 expo curve
 // Analog min/max calibrations
 #define ADR_LOCALANALOG_MIN_0 0x500
 #define ADR_LOCALANALOG_MAX_0 0x501

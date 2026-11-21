@@ -94,7 +94,7 @@ enum class Axis_commands : uint32_t{
 	power=0x00,degrees=0x01,esgain,zeroenc,invert,idlespring,axisdamper,enctype,drvtype,
 	pos,maxspeed,maxtorquerate,fxratio,curtorque,curpos,curspd,curaccel,reductionScaler,
 	filterSpeed, filterAccel, filterProfileId,cpr,axisfriction,axisinertia,
-	expo,exposcale
+	expo,exposcale,hosttorque,hosttimeout
 };
 
 class Axis : public PersistentStorage, public CommandHandler, public ErrorHandler
@@ -178,6 +178,23 @@ public:
 
 	static const std::vector<class_entry<MotorDriver>> axis1_drivers;
 	static const std::vector<class_entry<MotorDriver>> axis2_drivers;
+#if defined(PWMDRIVER_MULTI) && PWMDRIVER_MULTI >= 3
+	static const std::vector<class_entry<MotorDriver>> axis3_drivers;
+#endif
+#if defined(PWMDRIVER_MULTI) && PWMDRIVER_MULTI >= 4
+	static const std::vector<class_entry<MotorDriver>> axis4_drivers;
+#endif
+#ifdef LOCALENCODER_MULTI
+	static const std::vector<class_entry<Encoder>> axis_encoders[LOCALENCODER_MULTI]; // Per axis encoder lists with its own local encoder
+#endif
+
+	/*
+	 * Host torque: torque sent by the PC with the hosttorque command, mainly for command axes that get no game effects.
+	 * Added to the game effect torque. Ignored after hostTimeoutMs without an update (0 = no timeout).
+	 */
+	void setHostTorque(int32_t torque);
+	int32_t getHostTorque();
+	bool hostActive(); // Host torque received within the timeout
 
 private:
 	// Axis damper is lower than default scale of HID Damper
@@ -241,6 +258,9 @@ private:
 	float _lastSpeed = 0;
 	int32_t effectTorque = 0;
 	int32_t axisEffectTorque = 0;
+	volatile int32_t hostTorque = 0;
+	volatile uint32_t hostTorqueTick = 0; // HAL tick of the last hosttorque command. 0 = never
+	uint16_t hostTimeoutMs = 100;
 	uint8_t fx_ratio_i = 204; // Reduce effects to a certain ratio of the total power to have a margin for the endstop. 80% = 204
 	uint16_t power = 5000;
 	float torqueScaler = 0; // power * fx_ratio as a ratio between 0 & 1

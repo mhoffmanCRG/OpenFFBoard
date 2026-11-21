@@ -23,11 +23,33 @@ const ClassIdentifier FFBWheel::getInfo(){
 }
 
 
-FFBWheel::FFBWheel() :
-		FFBHIDMain(1,FFBWHEEL_32B_MODE)
+FFBWheel::FFBWheel() : FFBWheel(1)
 {
+
+}
+
+FFBWheel::FFBWheel(uint8_t axisCount) :
+		FFBHIDMain(axisCount,FFBWHEEL_32B_MODE)
+{
+	effects_calc->setFfbAxisCount(1); // Game effects only on the wheel axis
 	FFBHIDMain::setFFBEffectsCalc(ffb, effects_calc);
 }
+
+#ifdef FFBWHEEL_MULTI
+ClassIdentifier FFBWheelMulti::info = {
+		 .name = "FFB Wheel + command axes" ,
+		 .id=CLSID_MAIN_FFBWHEEL_MULTI,
+ };
+
+const ClassIdentifier FFBWheelMulti::getInfo(){
+	return info;
+}
+
+FFBWheelMulti::FFBWheelMulti() : FFBWheel(FFBWHEEL_MULTI)
+{
+
+}
+#endif
 
 FFBWheel::~FFBWheel() {
 

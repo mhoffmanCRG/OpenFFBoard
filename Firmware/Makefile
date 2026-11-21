@@ -179,7 +179,7 @@ CXXFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 # LDFLAGS
 #######################################
 # link script
-ifeq ($(MCU_TARGET),F407VG_DISCO)
+ifneq (,$(filter $(MCU_TARGET),F407VG_DISCO F407VG_AASD4))
 LDSCRIPT = $(TARGET_DIR)/STM32F407VGTX_FLASH.ld
 else
 LDSCRIPT = $(TARGET_DIR)/STM32$(MCU_TARGET)TX_FLASH.ld

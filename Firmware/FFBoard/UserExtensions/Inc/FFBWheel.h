@@ -28,11 +28,28 @@ public:
 
 	void usbInit() override;
 
+protected:
+	FFBWheel(uint8_t axisCount); // Wheel on the first axis plus further axes without game effects
 
 private:
 	std::shared_ptr<EffectsCalculator> effects_calc = std::make_shared<EffectsCalculator>();
 	std::shared_ptr<EffectsControlItf> ffb = std::make_shared<HidFFB>(effects_calc,1);
 };
+
+#ifdef FFBWHEEL_MULTI
+/**
+ * FFB wheel on the first axis plus FFBWHEEL_MULTI-1 command axes.
+ * Games only drive the first axis (same USB descriptor as the wheel).
+ * The other axes use their independent effects and torque sent with axis.<n>.hosttorque.
+ * Positions of all axes are reported as HID axes (X, Y, Z, Rx).
+ */
+class FFBWheelMulti : public FFBWheel {
+public:
+	FFBWheelMulti();
+	static ClassIdentifier info;
+	const ClassIdentifier getInfo();
+};
+#endif
 
 #endif
 

@@ -356,6 +356,9 @@ void HidFFB::set_condition(FFB_SetCondition_Data_t *cond){
 		return;
 	}
 	uint8_t axis = std::min(axisCount,cond->parameterBlockOffset);
+	if(axis >= MAX_AXIS){
+		return; // Would write outside conditions[]
+	}
 
 	FFB_Effect *effect = &effects[cond->effectBlockIndex - 1];
 	effect->conditions[axis].cpOffset = cond->cpOffset;

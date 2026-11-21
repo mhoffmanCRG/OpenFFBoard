@@ -7,6 +7,7 @@
 
 #include <MotorPWM.h>
 #ifdef PWMDRIVER
+#include <algorithm>
 
 #include "cpp_target_config.h"
 
@@ -17,7 +18,15 @@ const std::vector<std::string> RC_SpeedNames = {"20ms","15ms","10ms","5ms"};
 const std::vector<std::string> PWM_SpeedNames = {"3khz","9khz","17khz","24khz"};
 // Names of SpeedPWM_DRV
 const std::vector<std::string> PwmModeNames = {"RC PPM","0%-50%-100% Centered","0-100% PWM/DIR","0-100% dual PWM"};
-bool MotorPWM::pwmDriverInUse = false;
+extern cpp_freertos::MutexStandard pwmTimMutex;
+std::array<bool,PWMDRIVER_INSTANCES> MotorPWM::instanceInUse = {false};
+#ifdef PWMDRIVER_MULTI
+std::array<MotorPWM*,PWMDRIVER_INSTANCES> MotorPWM::instances = {nullptr};
+#endif
+
+// Settings address per instance
+static const std::array<uint16_t,4> pwmModeAddr = {ADR_PWM_MODE,ADR_PWM_MODE_2,ADR_PWM_MODE_3,ADR_PWM_MODE_4};
+static_assert(PWMDRIVER_INSTANCES <= 4, "Only 4 PWM driver flash addresses defined");
 
 ClassIdentifier MotorPWM::info = {
 		 .name = "PWM" ,
@@ -28,14 +37,51 @@ const ClassIdentifier MotorPWM::getInfo(){
 }
 
 bool MotorPWM::isCreatable(){
-	return !MotorPWM::pwmDriverInUse; // Creatable if not already in use for example by another axis
+	return isInstanceCreatable(0); // Creatable if not already in use for example by another axis
+}
+
+bool MotorPWM::isInstanceCreatable(uint8_t instance){
+	return instance < PWMDRIVER_INSTANCES && !instanceInUse[instance];
+}
+
+#ifdef PWMDRIVER_MULTI
+static const PWMConfig& pwmConfigFor(uint8_t instance){
+	return MotorPWM::multiConfigs[std::min<uint8_t>(instance, PWMDRIVER_MULTI - 1)];
+}
+#endif
+
+bool MotorPWM::isMulti() const{
+#ifdef PWMDRIVER_MULTI
+	return true;
+#else
+	return false;
+#endif
 }
 
 
 // Thread stack in words. Uses the FPU (larger context) and encoder calls. 128 overflowed and corrupted the heap
-MotorPWM::MotorPWM() : CommandHandler("pwmdrv",CLSID_MOT_PWM), Thread("PWMZERO",512,20) {
+MotorPWM::MotorPWM(uint8_t instance) : CommandHandler("pwmdrv",CLSID_MOT_PWM,instance), Thread("PWMZERO",512,20),
+		instance(std::min<uint8_t>(instance, PWMDRIVER_INSTANCES - 1)),
+#ifdef PWMDRIVER_MULTI
+		cfg(pwmConfigFor(instance))
+#else
+		cfg(timerConfig)
+#endif
+{
 
-	MotorPWM::pwmDriverInUse = true;
+	MotorPWM::instanceInUse[this->instance] = true;
+#ifdef PWMDRIVER_MULTI
+	instances[this->instance] = this;
+	mode = ModePWM_DRV::PWM_DIR; // Zero torque output by default. Centered PWM would drive half torque into a servo
+	// All instances share the timer frequency. Start with the one already in use
+	for(MotorPWM* other : instances){
+		if(other && other != this){
+			pwmspeed = other->pwmspeed;
+			break;
+		}
+	}
+	initMultiOutput();
+#endif
 	restoreFlash();
 	//HAL_TIM_Base_Start_IT(timer);
 	setPwmSpeed(pwmspeed);
@@ -64,17 +110,121 @@ MotorPWM::MotorPWM() : CommandHandler("pwmdrv",CLSID_MOT_PWM), Thread("PWMZERO",
 }
 
 MotorPWM::~MotorPWM() {
-	MotorPWM::pwmDriverInUse = false;
-	HAL_TIM_PWM_Stop(timerConfig.timer, timerConfig.channel_1);
-	HAL_TIM_PWM_Stop(timerConfig.timer, timerConfig.channel_2);
-	HAL_TIM_PWM_Stop(timerConfig.timer, timerConfig.channel_3);
-	HAL_TIM_PWM_Stop(timerConfig.timer, timerConfig.channel_4);
-	HAL_TIM_Base_Stop_IT(timerConfig.timer);
+	MotorPWM::instanceInUse[instance] = false;
+#ifdef PWMDRIVER_MULTI
+	// Only stop this instance's channel. The timer keeps running for the other axes
+	instances[instance] = nullptr;
+	setPWM(0, cfg.pwm_chan);
+	setDir(true);
+	if(cfg.pwmComplementary){
+		HAL_TIMEx_PWMN_Stop(cfg.timer, cfg.channel_1);
+	}else{
+		HAL_TIM_PWM_Stop(cfg.timer, cfg.channel_1);
+	}
+#else
+	HAL_TIM_PWM_Stop(cfg.timer, cfg.channel_1);
+	HAL_TIM_PWM_Stop(cfg.timer, cfg.channel_2);
+	HAL_TIM_PWM_Stop(cfg.timer, cfg.channel_3);
+	HAL_TIM_PWM_Stop(cfg.timer, cfg.channel_4);
+	HAL_TIM_Base_Stop_IT(cfg.timer);
+#endif
+}
+
+/**
+ * Sets the direction output for PWM/DIR mode. Positive = high (same levels as the timer channel version)
+ */
+void MotorPWM::setDir(bool positive){
+	if(cfg.dirPort){
+		HAL_GPIO_WritePin(cfg.dirPort, cfg.dirPin, positive ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	}else if(positive){
+		setPWM(0,cfg.dir_chan_n);
+		setPWM(0xffff,cfg.dir_chan);
+	}else{
+		setPWM(0,cfg.dir_chan);
+		setPWM(0xffff,cfg.dir_chan_n);
+	}
+}
+
+static void pwmEnableGpioClock(GPIO_TypeDef* port){
+#ifdef RCC_AHB1ENR_GPIOAEN
+	// STM32F4: GPIO ports are 0x400 apart and their clock enable bits are consecutive from GPIOA
+	RCC->AHB1ENR |= 1U << (((uint32_t)port - GPIOA_BASE) / 0x400U);
+	(void)RCC->AHB1ENR;
+#else
+	(void)port;
+#endif
+}
+
+/**
+ * Multi instance: configures the DIR pin, the PWM pin and the timer channel of this instance only.
+ * In multi instance configs channel_1 is the channel of this instance and pwm_chan its CCR number.
+ */
+void MotorPWM::initMultiOutput(){
+	GPIO_InitTypeDef init = {0};
+	if(cfg.dirPort){
+		pwmEnableGpioClock(cfg.dirPort);
+		HAL_GPIO_WritePin(cfg.dirPort, cfg.dirPin, GPIO_PIN_SET);
+		init.Pin = cfg.dirPin;
+		init.Mode = GPIO_MODE_OUTPUT_PP;
+		init.Pull = GPIO_NOPULL;
+		init.Speed = GPIO_SPEED_FREQ_LOW;
+		HAL_GPIO_Init(cfg.dirPort, &init);
+	}
+	if(cfg.pwmPort){
+		pwmEnableGpioClock(cfg.pwmPort);
+		init.Pin = cfg.pwmPin;
+		init.Mode = GPIO_MODE_AF_PP;
+		init.Pull = GPIO_NOPULL;
+		init.Speed = GPIO_SPEED_FREQ_HIGH;
+		init.Alternate = cfg.pwmAf;
+		HAL_GPIO_Init(cfg.pwmPort, &init);
+	}
+
+	// Own channel only. Other instances keep running
+	TIM_OC_InitTypeDef sConfigOC = {0};
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH; // CHxN alone (CCxE off) outputs OCxREF with this polarity, same as CHx
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+	sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+	pwmTimMutex.Lock();
+	HAL_TIM_PWM_ConfigChannel(cfg.timer, &sConfigOC, cfg.channel_1);
+	if(cfg.pwmComplementary){
+		HAL_TIMEx_PWMN_Start(cfg.timer, cfg.channel_1);
+	}else{
+		HAL_TIM_PWM_Start(cfg.timer, cfg.channel_1);
+	}
+	pwmTimMutex.Unlock();
+}
+
+/**
+ * Takes over a new period of the shared timer (multi instance) and rewrites the output for it
+ */
+void MotorPWM::applySpeed(SpeedPWM_DRV spd,int32_t period,int32_t prescaler){
+	this->pwmspeed = spd;
+	this->period = period;
+	this->prescaler = prescaler;
+	tFreq = (float)(cfg.timerFreq/1000000)/(float)(prescaler+1);
+	refreshOutput();
+}
+
+/**
+ * Rewrites the output with the current settings. Torque values only reach turn() when they change
+ */
+void MotorPWM::refreshOutput(){
+	if(active && !calibrating){
+		turn(lastInput);
+	}else{
+		setIdleOutput();
+	}
 }
 
 
 
 void MotorPWM::turn(int16_t power){
+	lastInput = power;
 	if(!active || calibrating)
 		return;
 
@@ -91,7 +241,7 @@ void MotorPWM::turn(int16_t power){
 
 		float val = ((pval * 1000)/0x7fff)*tFreq;
 		val = clip((1500*tFreq)-val,1000*tFreq, 2000*tFreq);
-		setPWM(val,timerConfig.rcpwm_chan);
+		setPWM(val,cfg.rcpwm_chan);
 
 	/*
 	 * Generates a 0-100% PWM signal
@@ -99,31 +249,25 @@ void MotorPWM::turn(int16_t power){
 	 * Can be used with cheap halfbridge modules and DC motors
 	 */
 	}else if(mode == ModePWM_DRV::PWM_DIR){
-		if(power < 0){
-			setPWM(0,timerConfig.dir_chan);
-			setPWM(0xffff,timerConfig.dir_chan_n);
-		}else{
-			setPWM(0,timerConfig.dir_chan_n);
-			setPWM(0xffff,timerConfig.dir_chan);
-		}
+		setDir(power >= 0);
 		// Zero torque = zeroPulse(), full torque = 100%. Never a constant low level. See minDacPulse()
 		uint32_t minval = zeroPulse();
 		uint32_t val = minval + (uint32_t)(((uint64_t)abs(power) * (period - minval))/0x7fff);
-		setPWM(val,timerConfig.pwm_chan);
+		setPWM(val,cfg.pwm_chan);
 
 	}else if(mode == ModePWM_DRV::CENTERED_PWM){
 		int32_t pval = 0x7fff+power;
 		int32_t val = (pval * period)/0xffff;
-		setPWM(val,timerConfig.centerpwm_chan);
+		setPWM(val,cfg.centerpwm_chan);
 
 	}else if(mode == ModePWM_DRV::PWM_DUAL){
 		int32_t val = (uint32_t)((abs(power) * period)/0x7fff);
 		if(power < 0){
-			setPWM(0,timerConfig.dualpwm1);
-			setPWM(val,timerConfig.dualpwm2);
+			setPWM(0,cfg.dualpwm1);
+			setPWM(val,cfg.dualpwm2);
 		}else{
-			setPWM(0,timerConfig.dualpwm2);
-			setPWM(val,timerConfig.dualpwm1);
+			setPWM(0,cfg.dualpwm2);
+			setPWM(val,cfg.dualpwm1);
 		}
 	}
 }
@@ -132,7 +276,7 @@ void MotorPWM::turn(int16_t power){
  * Calculates period and prescaler for a timer based on frequency
  */
 std::pair<uint16_t,uint16_t> MotorPWM::freqToPeriodPsc(uint32_t freq){
-	uint32_t arr_raw = (timerConfig.timerFreq/freq);
+	uint32_t arr_raw = (cfg.timerFreq/freq);
 	uint32_t prescaler = arr_raw / 0xffff;
 	uint32_t arr = arr_raw / (prescaler + 1);
 	return {arr,prescaler};
@@ -148,7 +292,7 @@ void MotorPWM::setPwmSpeed(SpeedPWM_DRV spd){
 	case SpeedPWM_DRV::LOW:
 		if(mode == ModePWM_DRV::RC_PWM){
 			period =  40000;  //20ms (40000/Sysclock)
-			prescaler = timerConfig.timerFreq/2000000;
+			prescaler = cfg.timerFreq/2000000;
 		}else{
 			std::tie(period,prescaler) = freqToPeriodPsc(3000);
 		}
@@ -157,7 +301,7 @@ void MotorPWM::setPwmSpeed(SpeedPWM_DRV spd){
 	case SpeedPWM_DRV::MID:
 		if(mode == ModePWM_DRV::RC_PWM){
 			period = 30000;//15ms(30000/47)
-			prescaler = timerConfig.timerFreq/2000000;
+			prescaler = cfg.timerFreq/2000000;
 		}else{
 			std::tie(period,prescaler) = freqToPeriodPsc(9000);
 		}
@@ -166,7 +310,7 @@ void MotorPWM::setPwmSpeed(SpeedPWM_DRV spd){
 	case SpeedPWM_DRV::HIGH:
 		if(mode == ModePWM_DRV::RC_PWM){
 			period = 20000; //10ms (20000/47)
-			prescaler = timerConfig.timerFreq/2000000;
+			prescaler = cfg.timerFreq/2000000;
 		}else{
 			std::tie(period,prescaler) = freqToPeriodPsc(17000);
 		}
@@ -174,7 +318,7 @@ void MotorPWM::setPwmSpeed(SpeedPWM_DRV spd){
 	case SpeedPWM_DRV::VERYHIGH:
 		if(mode == ModePWM_DRV::RC_PWM){
 			period = 10000; //5ms (20000/23)
-			prescaler = timerConfig.timerFreq/2000000;
+			prescaler = cfg.timerFreq/2000000;
 		}else{
 			std::tie(period,prescaler) = freqToPeriodPsc(24000);
 		}
@@ -183,15 +327,40 @@ void MotorPWM::setPwmSpeed(SpeedPWM_DRV spd){
 		ok = false;
 	}
 
-	if(ok){
+	if(ok && isMulti()){
+#ifdef PWMDRIVER_MULTI
+		// The frequency is shared by all instances. Write each used timer once without stopping the channels
+		std::array<TIM_HandleTypeDef*,PWMDRIVER_INSTANCES> done = {nullptr};
+		uint8_t doneCount = 0;
+		for(MotorPWM* inst : instances){
+			if(!inst){
+				continue;
+			}
+			TIM_HandleTypeDef* tim = inst->cfg.timer;
+			if(std::find(done.begin(), done.begin() + doneCount, tim) == done.begin() + doneCount){
+				done[doneCount++] = tim;
+				pwmTimMutex.Lock();
+				tim->Instance->PSC = prescaler;
+				tim->Instance->ARR = period;
+				tim->Instance->EGR = TIM_EGR_UG; // Load the prescaler now
+				pwmTimMutex.Unlock();
+			}
+		}
+		for(MotorPWM* inst : instances){
+			if(inst){
+				inst->applySpeed(spd, period, prescaler);
+			}
+		}
+#endif
+	}else if(ok){
 		this->pwmspeed = spd;
-		tFreq = (float)(timerConfig.timerFreq/1000000)/(float)(prescaler+1);
+		tFreq = (float)(cfg.timerFreq/1000000)/(float)(prescaler+1);
 
-		pwmInitTimer(timerConfig.timer, timerConfig.channel_1,period,prescaler);
-		pwmInitTimer(timerConfig.timer, timerConfig.channel_2,period,prescaler);
-		pwmInitTimer(timerConfig.timer, timerConfig.channel_3,period,prescaler);
-		pwmInitTimer(timerConfig.timer, timerConfig.channel_4,period,prescaler);
-		HAL_TIM_MspPostInit(timerConfig.timer);
+		pwmInitTimer(cfg.timer, cfg.channel_1,period,prescaler);
+		pwmInitTimer(cfg.timer, cfg.channel_2,period,prescaler);
+		pwmInitTimer(cfg.timer, cfg.channel_3,period,prescaler);
+		pwmInitTimer(cfg.timer, cfg.channel_4,period,prescaler);
+		HAL_TIM_MspPostInit(cfg.timer);
 //		setPWM_HAL(0, timer, channel_1, period);
 //		pwmInitTimer(timer, channel_2,period,prescaler);
 //		setPWM_HAL(0, timer, channel_2, period);
@@ -206,13 +375,13 @@ void MotorPWM::setPwmSpeed(SpeedPWM_DRV spd){
  */
 void MotorPWM::setPWM(uint32_t value,uint8_t ccr){
 	if(ccr == 1){
-		timerConfig.timer->Instance->CCR1 = value; // Set next CCR for channel 1
+		cfg.timer->Instance->CCR1 = value; // Set next CCR for channel 1
 	}else if(ccr == 2){
-		timerConfig.timer->Instance->CCR2 = value; // Set next CCR for channel 2
+		cfg.timer->Instance->CCR2 = value; // Set next CCR for channel 2
 	}else if(ccr == 3){
-		timerConfig.timer->Instance->CCR3 = value; // Set next CCR for channel 3
+		cfg.timer->Instance->CCR3 = value; // Set next CCR for channel 3
 	}else if(ccr == 4){
-		timerConfig.timer->Instance->CCR4 = value; // Set next CCR for channel 4
+		cfg.timer->Instance->CCR4 = value; // Set next CCR for channel 4
 	}
 
 }
@@ -222,10 +391,10 @@ void MotorPWM::setPWM(uint32_t value,uint8_t ccr){
  */
 uint32_t MotorPWM::getPWM(uint8_t ccr){
 	switch(ccr){
-	case 1: return timerConfig.timer->Instance->CCR1;
-	case 2: return timerConfig.timer->Instance->CCR2;
-	case 3: return timerConfig.timer->Instance->CCR3;
-	case 4: return timerConfig.timer->Instance->CCR4;
+	case 1: return cfg.timer->Instance->CCR1;
+	case 2: return cfg.timer->Instance->CCR2;
+	case 3: return cfg.timer->Instance->CCR3;
+	case 4: return cfg.timer->Instance->CCR4;
 	default: return 0;
 	}
 }
@@ -236,18 +405,18 @@ uint32_t MotorPWM::getPWM(uint8_t ccr){
 uint32_t MotorPWM::getDuty(){
 	uint32_t ccr = 0;
 	switch(mode){
-	case ModePWM_DRV::RC_PWM: ccr = getPWM(timerConfig.rcpwm_chan); break;
-	case ModePWM_DRV::CENTERED_PWM: ccr = getPWM(timerConfig.centerpwm_chan); break;
-	case ModePWM_DRV::PWM_DIR: ccr = getPWM(timerConfig.pwm_chan); break;
-	case ModePWM_DRV::PWM_DUAL: ccr = std::max(getPWM(timerConfig.dualpwm1),getPWM(timerConfig.dualpwm2)); break;
+	case ModePWM_DRV::RC_PWM: ccr = getPWM(cfg.rcpwm_chan); break;
+	case ModePWM_DRV::CENTERED_PWM: ccr = getPWM(cfg.centerpwm_chan); break;
+	case ModePWM_DRV::PWM_DIR: ccr = getPWM(cfg.pwm_chan); break;
+	case ModePWM_DRV::PWM_DUAL: ccr = std::max(getPWM(cfg.dualpwm1),getPWM(cfg.dualpwm2)); break;
 	}
-	uint32_t arr = timerConfig.timer->Instance->ARR + 1;
+	uint32_t arr = cfg.timer->Instance->ARR + 1;
 	return std::min<uint32_t>(((uint64_t)ccr * 10000) / arr, 10000);
 }
 
 uint32_t MotorPWM::getFrequency(){
-	uint32_t ticks = (timerConfig.timer->Instance->PSC + 1) * (timerConfig.timer->Instance->ARR + 1);
-	return ticks ? timerConfig.timerFreq / ticks : 0;
+	uint32_t ticks = (cfg.timer->Instance->PSC + 1) * (cfg.timer->Instance->ARR + 1);
+	return ticks ? cfg.timerFreq / ticks : 0;
 }
 
 SpeedPWM_DRV MotorPWM::getPwmSpeed(){
@@ -268,11 +437,11 @@ void MotorPWM::saveFlash(){
 	uint8_t md = (minDuty == MINDUTY_DEFAULT) ? 0 : minDuty + 1;
 	var |= (md & 0xff) << 7;
 	var |= (this->invertDir & 0x1) << 15; // Last bit inversion
-	Flash_Write(ADR_PWM_MODE, var);
+	Flash_Write(pwmModeAddr[instance], var);
 }
 void MotorPWM::restoreFlash(){
 	uint16_t var = 0;
-	if(Flash_Read(ADR_PWM_MODE, &var)){
+	if(Flash_Read(pwmModeAddr[instance], &var)){
 		uint8_t md = (var >> 7) & 0xff;
 		this->minDuty = (md == 0) ? MINDUTY_DEFAULT : md - 1;
 		this->autoZeroEnabled = ((var >> 3) & 0x1) == 0;
@@ -281,7 +450,16 @@ void MotorPWM::restoreFlash(){
 		this->setMode(ModePWM_DRV(m));
 
 		uint8_t s = (var >> 4) & 0x7;
-		this->setPwmSpeed(SpeedPWM_DRV(s));
+		bool takeSpeed = true;
+#ifdef PWMDRIVER_MULTI
+		// Shared frequency: the first instance's saved value wins. Others keep the running frequency
+		if(instance != 0 && instances[0] != nullptr){
+			takeSpeed = false;
+		}
+#endif
+		if(takeSpeed){
+			this->setPwmSpeed(SpeedPWM_DRV(s));
+		}
 
 		this->invertDir = (var >> 15) & 0x1;
 	}
@@ -301,9 +479,8 @@ void MotorPWM::setMinDuty(uint16_t val){
 void MotorPWM::setIdleOutput(){
 	if(mode != ModePWM_DRV::PWM_DIR)
 		return;
-	setPWM(0,timerConfig.dir_chan_n);
-	setPWM(0xffff,timerConfig.dir_chan);
-	setPWM(zeroPulse(),timerConfig.pwm_chan);
+	setDir(true);
+	setPWM(zeroPulse(),cfg.pwm_chan);
 }
 
 
@@ -341,9 +518,8 @@ bool MotorPWM::calSetPWM(uint32_t val){
 	__disable_irq();
 	bool ok = active && mode == ModePWM_DRV::PWM_DIR;
 	if(ok){
-		setPWM(0,timerConfig.dir_chan_n);
-		setPWM(0xffff,timerConfig.dir_chan);
-		setPWM(val,timerConfig.pwm_chan);
+		setDir(true);
+		setPWM(val,cfg.pwm_chan);
 	}
 	if(!primask) __enable_irq();
 	return ok;
@@ -531,6 +707,10 @@ bool MotorPWM::runAutoZero(float* zeroFrac){
 
 
 void MotorPWM::setMode(ModePWM_DRV mode){
+	if(isMulti() && mode != ModePWM_DRV::PWM_DIR && mode != ModePWM_DRV::CENTERED_PWM){
+		// RC PPM changes the shared timer period and dual PWM needs a second channel
+		mode = ModePWM_DRV::PWM_DIR;
+	}
 	this->mode = mode;
 	setPwmSpeed(pwmspeed); // Reinit timer
 }
@@ -572,6 +752,9 @@ CommandStatus MotorPWM::command(const ParsedCommand& cmd,std::vector<CommandRepl
 			replies.emplace_back((uint8_t)this->getMode());
 		}else if(cmd.type == CMDtype::info){
 			for(uint8_t i = 0; i<PwmModeNames.size();i++){
+				if(isMulti() && i != (uint8_t)ModePWM_DRV::PWM_DIR && i != (uint8_t)ModePWM_DRV::CENTERED_PWM){
+					continue; // Not available with a shared timer
+				}
 				replies.emplace_back(PwmModeNames[i]  + ":" + std::to_string(i)+"\n");
 			}
 		}
@@ -630,7 +813,7 @@ CommandStatus MotorPWM::command(const ParsedCommand& cmd,std::vector<CommandRepl
 		replies.emplace_back(calLow);
 		break;
 	case MotorPWM_commands::zero:
-		replies.emplace_back(((uint64_t)zeroPulse() * 10000) / (timerConfig.timer->Instance->ARR + 1));
+		replies.emplace_back(((uint64_t)zeroPulse() * 10000) / (cfg.timer->Instance->ARR + 1));
 		break;
 	default:
 		return CommandStatus::NOT_FOUND;

@@ -103,9 +103,10 @@ An inertia condition uses axis acceleration as the metric.
  */
 void EffectsCalculator::calculateEffects(std::vector<std::unique_ptr<Axis>> &axes)
 {
-	for (auto &axis : axes) {
-		axis->setEffectTorque(0);
-		axis->calculateAxisEffects(isActive());
+	// Axes from ffbAxisCount on are not driven by game effects (command axes). Their idle effects follow their own host torque state
+	for (size_t i = 0; i < axes.size(); i++) {
+		axes[i]->setEffectTorque(0);
+		axes[i]->calculateAxisEffects(i < ffbAxisCount ? isActive() : false);
 	}
 
 	if(!isActive()){
@@ -113,7 +114,7 @@ void EffectsCalculator::calculateEffects(std::vector<std::unique_ptr<Axis>> &axe
 	}
 
 	int32_t force = 0;
-	int axisCount = axes.size();
+	int axisCount = std::min<int>({(int)axes.size(), (int)ffbAxisCount, MAX_AXIS});
 	int32_t forces[MAX_AXIS] = {0};
 
 	for (uint8_t i = 0; i < effects_stats.size(); i++)
@@ -806,7 +807,7 @@ CommandStatus EffectsCalculator::command(const ParsedCommand& cmd,std::vector<Co
 	{
 		uint8_t axis = 0;
 		if(cmd.type == CMDtype::getat){
-			axis = std::min<uint8_t>(cmd.adr,MAX_AXIS);
+			axis = std::min<uint8_t>(cmd.adr,MAX_AXIS-1);
 		}
 		if (cmd.type == CMDtype::get || cmd.type == CMDtype::getat)
 		{

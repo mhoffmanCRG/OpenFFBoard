@@ -79,7 +79,7 @@ int32_t SerialFFB::newEffect(uint8_t effectType){
 		// Allocate effect
 		effects[idx].type = effectType;
 		effects[idx].duration = FFB_EFFECT_DURATION_INFINITE;
-		effects[idx].axisMagnitudes[std::min(this->getCommandHandlerInstance(),(uint8_t)MAX_AXIS)] = 1;
+		effects[idx].axisMagnitudes[std::min(this->getCommandHandlerInstance(),(uint8_t)(MAX_AXIS-1))] = 1;
 		effects[idx].useSingleCondition = false;
 		for(auto &cond : effects[idx].conditions){ // Set default conditions
 			cond = defaultCond;

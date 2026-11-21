@@ -9,6 +9,7 @@
 #define MOTORPWM_H_
 
 #include <MotorDriver.h>
+#include <array>
 #include "cppmain.h"
 #include "CommandHandler.h"
 #include "TimerHandler.h"
@@ -44,7 +45,26 @@ struct PWMConfig{
 
 		TIM_HandleTypeDef* timer = &TIM_PWM;
 		uint32_t timerFreq = 168000000;
+
+		/*
+		 * Optional, used by multi instance targets (PWMDRIVER_MULTI):
+		 * dirPort/dirPin: GPIO direction output for PWM/DIR mode instead of the dir_chan/dir_chan_n timer channels.
+		 * pwmPort/pwmPin/pwmAf: PWM output pin, configured at runtime instead of HAL_TIM_MspPostInit.
+		 * pwmComplementary: pwm_chan is output on the complementary CHxN pin (advanced timers).
+		 */
+		GPIO_TypeDef* dirPort = nullptr;
+		uint16_t dirPin = 0;
+		GPIO_TypeDef* pwmPort = nullptr;
+		uint16_t pwmPin = 0;
+		uint8_t pwmAf = 0;
+		bool pwmComplementary = false;
 	};
+
+#ifdef PWMDRIVER_MULTI
+#define PWMDRIVER_INSTANCES PWMDRIVER_MULTI
+#else
+#define PWMDRIVER_INSTANCES 1
+#endif
 
 /**
  * Contains motor drivers methods based on PWM generation.
@@ -60,12 +80,17 @@ public:
 	enum class AutoZeroState : uint8_t {NOT_RUN=0,RUNNING=1,OK=2,FAILED=3};
 	enum class AutoZeroFail : uint8_t {NONE=0,NOT_PWMDIR=1,NO_ENCODER=2,STOPPED=3,NO_MOVEMENT=4,TRAVEL=5,NOT_STOPPING=6,NO_LOW_EDGE=7};
 public:
-	MotorPWM();
+	/**
+	 * @param instance driver instance. 0 on single PWM driver targets. Multi instance targets (PWMDRIVER_MULTI)
+	 * use one timer channel and DIR pin per instance from MotorPWM::multiConfigs and share the PWM frequency.
+	 */
+	MotorPWM(uint8_t instance = 0);
 	virtual ~MotorPWM();
 
 	static ClassIdentifier info;
 	const ClassIdentifier getInfo();
 	static bool isCreatable();
+	static bool isInstanceCreatable(uint8_t instance);
 
 	void turn(int16_t power);
 	void stopMotor();
@@ -88,10 +113,21 @@ public:
 
 	void setPWM(uint32_t value,uint8_t ccr);
 
-	static bool pwmDriverInUse;
+	static std::array<bool,PWMDRIVER_INSTANCES> instanceInUse;
 
-	static PWMConfig& config;
 private:
+	const uint8_t instance;
+	const PWMConfig& cfg; // Timer and pins of this instance
+	bool isMulti() const; // Shares the timer with other instances. Only touches its own channel
+	void setDir(bool positive); // Direction output for PWM/DIR mode
+	void initMultiOutput(); // Pins and channel of this instance (multi instance)
+	void applySpeed(SpeedPWM_DRV spd,int32_t period,int32_t prescaler); // Takes over a new timer period
+	void refreshOutput(); // Rewrites the output after a period change
+	int16_t lastInput = 0; // Last torque passed to turn() before inversion
+#ifdef PWMDRIVER_MULTI
+	static std::array<MotorPWM*,PWMDRIVER_INSTANCES> instances; // Live instances. They share the PWM frequency
+#endif
+
 	float tFreq = 1; // Frequency scaling. Timer freq in MHz
 	int32_t period = 20000;
 	int32_t prescaler = 95;
@@ -153,8 +189,14 @@ private:
 	/**
 	 * The timer channels are mapped in the cpp_target_config files
 	 */
+#ifdef PWMDRIVER_MULTI
+public:
+	static const std::array<PWMConfig,PWMDRIVER_MULTI> multiConfigs; // One entry per instance
+private:
+#else
 	static const PWMConfig timerConfig;
-	static std::pair<uint16_t,uint16_t> freqToPeriodPsc(uint32_t freq);
+#endif
+	std::pair<uint16_t,uint16_t> freqToPeriodPsc(uint32_t freq);
 
 	/**
 	 * Pulse at zero torque in PWM/DIR mode (minDuty, default 1%). Torque is scaled from here to 100%.
@@ -169,6 +211,19 @@ private:
 		return std::max<uint32_t>(p, (period + 4095) / 4096);
 	}
 };
+
+#ifdef PWMDRIVER_MULTI
+/**
+ * PWM driver for further axes on multi instance targets. INST is the instance (1 = second axis)
+ */
+template<uint8_t INST>
+class MotorPWM_N : public MotorPWM{
+	static_assert(INST > 0 && INST < PWMDRIVER_MULTI, "PWM instance not defined by the target");
+public:
+	MotorPWM_N() : MotorPWM(INST){}
+	static bool isCreatable(){return MotorPWM::isInstanceCreatable(INST);}
+};
+#endif
 
 
 #endif /* MOTORPWM_H_ */

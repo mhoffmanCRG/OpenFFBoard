@@ -41,6 +41,9 @@ const std::vector<class_entry<FFBoardMain>> class_registry =
 #ifdef FFBWHEEL
 		add_class<FFBWheel,FFBoardMain>(),
 #endif
+#if defined(FFBWHEEL) && defined(FFBWHEEL_MULTI)
+		add_class<FFBWheelMulti,FFBoardMain>(),
+#endif
 
 #ifdef FFBJOYSTICK
 		add_class<FFBJoystick,FFBoardMain>(),
